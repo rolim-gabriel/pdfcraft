@@ -1,0 +1,22 @@
+# Fork-only: builds a Windows pdfcraft.exe from this branch for manual testing.
+# Not part of the upstream PR.
+name: Windows exe (fork test build)
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/windows-exe]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release -p pdfcraft
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pdfcraft-windows-x64
+          path: target/release/pdfcraft.exe
