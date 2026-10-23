@@ -1423,6 +1423,54 @@ fn dragging_a_tab_moves_it_and_keeps_the_same_document_active() {
     }
 }
 
+/// Where the strip is the title bar (GNOME, Windows by choice) a press anywhere on it may move the
+/// window, so dragging a tab must move the tab and not the window; the strip's empty space still
+/// moves the window.
+#[test]
+fn dragging_a_tab_in_the_app_title_bar_moves_the_tab_not_the_window() {
+    use egui::accesskit::Role;
+    use pdfcraft_ui_egui::window_controls::Layout;
+    fn drag(h: &mut Harness<'static, PdfCraftApp>, from: egui::Pos2, to: egui::Pos2) -> bool {
+        let mut moved_window = false;
+        let mut note = |h: &Harness<'static, PdfCraftApp>| {
+            moved_window |= h.output().viewport_output.values().any(|v| v.commands.contains(&egui::ViewportCommand::StartDrag));
+        };
+        h.event(egui::Event::PointerMoved(from));
+        h.event(egui::Event::PointerButton { pos: from, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE });
+        h.run_steps(1);
+        note(h);
+        for k in 1..=6 {
+            h.event(egui::Event::PointerMoved(from.lerp(to, k as f32 / 6.0)));
+            h.step();
+            note(h);
+        }
+        h.event(egui::Event::PointerButton { pos: to, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE });
+        for _ in 0..3 {
+            h.step();
+            note(h);
+        }
+        moved_window
+    }
+    let mut h = harness(|app| {
+        app.set_window_controls(Some(Layout::default()), true);
+        app.system_title_bar = false;
+        for name in ["first.pdf", "middle.pdf", "last.pdf"] {
+            app.open_bytes(name, None, FIXTURE.to_vec()).unwrap();
+        }
+    });
+    assert!(h.query_by_label("Minimize").is_some(), "the strip is the title bar");
+    let ids: Vec<_> = h.state().views.iter().map(|view| view.id).collect();
+    let first = h.get_by_role_and_label(Role::Tab, "first.pdf").rect();
+    let last = h.get_by_role_and_label(Role::Tab, "last.pdf").rect();
+    let moved_window = drag(&mut h, first.center(), last.right_center() + egui::vec2(20.0, 0.0));
+    assert!(!moved_window, "a tab drag must not move the window");
+    assert_eq!(h.state().views.iter().map(|view| view.id).collect::<Vec<_>>(), [ids[1], ids[2], ids[0]]);
+    // The strip's empty space past the tabs and the Open button still moves the window.
+    let after = h.get_by_role_and_label(Role::Tab, "first.pdf").rect();
+    let empty = egui::pos2(after.right() + 120.0, after.center().y);
+    assert!(drag(&mut h, empty, empty + egui::vec2(60.0, 40.0)), "the empty strip moves the window");
+}
+
 /// Regression (#2225): the drop line in front of the first tab sat half a gap outside the
 /// scroll area's clip rect and was never visible.
 #[test]
