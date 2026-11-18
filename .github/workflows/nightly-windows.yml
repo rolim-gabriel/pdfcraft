@@ -1,0 +1,56 @@
+# Fork-only, never part of an upstream PR. Every night: take the latest storytold/pdfcraft main,
+# merge this fork's ci/windows-exe (the title-bar and tab-strip-logo changes), build a Windows
+# release with translations, and publish it as the "nightly" release of this fork, replacing the
+# previous one. If upstream moves under the changes and the merge fails, the run fails and nothing
+# is replaced.
+name: Nightly Windows build (upstream + my changes)
+on:
+  schedule:
+    - cron: "17 8 * * *"
+  workflow_dispatch:
+  # A push to this fork's main (this file changing) builds at once.
+  push:
+    branches: [main]
+permissions:
+  contents: write
+concurrency:
+  group: nightly-windows
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: storytold/pdfcraft
+          ref: main
+          fetch-depth: 0
+      - name: Merge my changes onto upstream main
+        shell: bash
+        run: |
+          git config user.name "Gabriel Rolim"
+          git config user.email "ghrolim@gmail.com"
+          git fetch "https://github.com/${{ github.repository }}" ci/windows-exe
+          git merge --no-edit FETCH_HEAD
+          echo "UPSTREAM=$(git rev-parse --short origin/main)" >> "$GITHUB_ENV"
+      - name: Translations (craft-i18n at the commit upstream pins)
+        shell: bash
+        run: |
+          rev=$(tr -d '[:space:]' < craft-i18n.rev)
+          git clone --filter=blob:none https://github.com/storytold/craft-i18n ../craft-i18n
+          git -C ../craft-i18n checkout --quiet "$rev"
+          echo "CRAFT_I18N_DIR=$(cd ../craft-i18n && pwd -W)" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --locked -p pdfcraft
+      - name: Publish as the nightly release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp target/release/pdfcraft.exe pdfcraft-windows-x64.exe
+          gh release delete nightly -R "${{ github.repository }}" --yes --cleanup-tag || true
+          gh release create nightly pdfcraft-windows-x64.exe -R "${{ github.repository }}" \
+            --target "${{ github.sha }}" --prerelease --title "Nightly: upstream ${UPSTREAM} + my changes" \
+            --notes "storytold/pdfcraft main at ${UPSTREAM}, with this fork's ci/windows-exe merged in (Windows tab strip as the title bar; logo and name in the tab strip). Built $(date -u +%Y-%m-%d)."
