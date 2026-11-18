@@ -191,6 +191,7 @@ impl PdfCraftApp {
             titlebar_lights_right: None,
             window_controls: None,
             system_title_bar: window_controls::SYSTEM_TITLE_BAR_DEFAULT,
+            brand: brand::Brand::default(),
             app_frame_shown: None,
             password_prompt: None,
             document_copy: None,
